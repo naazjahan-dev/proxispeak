@@ -1,165 +1,204 @@
 import http from 'node:http';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import { Server } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
-import mongoose from 'mongoose';
 
-// Load environment variables
-dotenv.config();
-
-import { connectDB } from './config/db.js';
-import { pubClient, subClient, initRedis } from './config/redis.js';
+import { config, assertValidConfig } from './config/env.js';
+import { connectDB, closeDB, isDbConnected } from './config/db.js';
+import { pubClient, subClient, initRedis, isRedisReady, closeRedis } from './config/redis.js';
 import { registerSignalingHandler } from './sockets/signalingHandler.js';
 import UserSession from './models/UserSession.js';
 
-const PORT = process.env.PORT || 5000;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
-
-// 1. Initialize Express App
+// ---------------------------------------------------------------------------
+// 1. Express app
+// ---------------------------------------------------------------------------
 const app = express();
-app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
-app.use(express.json());
 
-// 2. HTTP Server & Socket.io Initialization
+const corsOptions = {
+  origin: config.corsOrigin === '*' ? '*' : config.corsOrigins,
+  credentials: config.allowCredentials,
+  methods: ['GET', 'POST'],
+};
+app.use(cors(corsOptions));
+app.disable('x-powered-by');
+app.use(express.json({ limit: config.jsonBodyLimit }));
+
+// ---------------------------------------------------------------------------
+// 2. HTTP server + Socket.IO
+// ---------------------------------------------------------------------------
 const httpServer = http.createServer(app);
 const io = new Server(httpServer, {
-  cors: {
-    origin: CORS_ORIGIN,
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
+  cors: corsOptions,
   pingInterval: 10000,
   pingTimeout: 5000,
   transports: ['websocket', 'polling'],
+  maxHttpBufferSize: 1e5, // 100 KB cap per socket message
 });
 
-// 3. Health & Observability Endpoints
+// ---------------------------------------------------------------------------
+// 3. HTTP endpoints
+// ---------------------------------------------------------------------------
 app.get('/', (req, res) => {
   res.json({
-    service: 'ProxiSpeak Backend Ecosystem',
-    description: 'Real-time geospatial audio and WebRTC signaling engine for virtual offices',
+    service: 'ProxiSpeak Backend',
+    description: 'Real-time proximity audio and WebRTC signaling engine for virtual offices',
     status: 'online',
     version: '1.0.0',
-    geospatialEngine: 'MongoDB 2dsphere ($near < 20ms)',
-    pubsubScaling: '@socket.io/redis-adapter',
+    proximityRadius: config.proximityRadius,
+    proximityModel: 'planar-euclidean',
+    pubsub: isRedisReady() ? 'redis-adapter' : 'in-memory-adapter',
   });
 });
 
-app.get('/health', async (req, res) => {
-  const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
-  const redisPubStatus = pubClient.isOpen ? 'ready' : 'offline';
-  const redisSubStatus = subClient.isOpen ? 'ready' : 'offline';
+app.get('/health', (req, res) => {
+  const mongoConnected = isDbConnected();
+  const redisConnected = isRedisReady();
 
-  const isHealthy = mongoose.connection.readyState === 1;
-
-  res.status(isHealthy ? 200 : 503).json({
-    status: isHealthy ? 'healthy' : 'degraded',
+  res.status(mongoConnected ? 200 : 503).json({
+    status: mongoConnected ? 'healthy' : 'degraded',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
     services: {
-      mongodb: mongoStatus,
-      redisPub: redisPubStatus,
-      redisSub: redisSubStatus,
+      mongodb: mongoConnected ? 'connected' : 'disconnected',
+      redis: redisConnected ? 'ready' : config.redisEnabled ? 'unavailable' : 'disabled',
     },
   });
 });
 
-app.get('/api/rooms/:roomId/users', async (req, res) => {
+app.get('/api/rooms/:roomId/users', async (req, res, next) => {
   try {
-    const { roomId } = req.params;
+    const roomId = String(req.params.roomId || '').trim();
+    if (!roomId || roomId.length > 128) {
+      return res.status(400).json({ error: 'roomId must be a non-empty string of at most 128 characters' });
+    }
+
     const activeUsers = await UserSession.find({ roomId, isActive: true })
       .select('userId socketId location lastActiveAt')
       .lean();
+
     res.json({ roomId, count: activeUsers.length, users: activeUsers });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-// 4. Register Socket.io Connection & Signaling Handlers
+// Unknown route
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Central error handler (kept last)
+app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
+  console.error('[HTTP] Unhandled error:', err.message);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// ---------------------------------------------------------------------------
+// 4. Socket.IO handlers
+// ---------------------------------------------------------------------------
 io.on('connection', (socket) => {
   registerSignalingHandler(io, socket);
 });
 
-// 5. System Bootstrap Sequence
-const bootstrap = async () => {
+// ---------------------------------------------------------------------------
+// 5. Bootstrap
+// ---------------------------------------------------------------------------
+export async function startServer() {
+  try {
+    assertValidConfig(config);
+  } catch (err) {
+    console.error(`\n${err.message}\n`);
+    process.exit(1);
+  }
+
   console.log('------------------------------------------------------------');
-  console.log('🚀 Initializing ProxiSpeak Real-Time Geospatial Backend...');
+  console.log('ProxiSpeak real-time proximity backend starting...');
+  console.log(`Environment: ${config.nodeEnv}`);
   console.log('------------------------------------------------------------');
 
-  // Step A: Connect to MongoDB
   try {
     await connectDB();
-    console.log('✅ [Database] MongoDB connection established with 2dsphere indexing ready.');
+    console.log('[Database] MongoDB connection established.');
   } catch (err) {
-    console.error('❌ [Database] Failed to connect to MongoDB:', err.message);
-    console.warn('⚠️ Server will continue, but geospatial operations require MongoDB.');
-  }
-
-  // Step B: Connect to Redis & Attach Socket.io Adapter for Horizontal Scaling
-  try {
-    await initRedis();
-    io.adapter(createAdapter(pubClient, subClient));
-    console.log('✅ [Pub/Sub] Socket.io Redis adapter successfully bound for multi-instance scaling.');
-  } catch (err) {
-    console.warn('⚠️ [Pub/Sub] Redis connection bypassed or unavailable. Operating with standard in-memory adapter:', err.message);
-  }
-
-  // Step C: Start HTTP and WebSocket listener
-  let currentPort = Number(PORT);
-  httpServer.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.warn(`⚠️ [Server] Port ${currentPort} is in use. Attempting fallback to port ${currentPort + 1}...`);
-      currentPort += 1;
-      setTimeout(() => {
-        httpServer.listen(currentPort);
-      }, 500);
-    } else {
-      console.error('❌ [Server] Fatal HTTP listener error:', err.message);
-    }
-  });
-
-  httpServer.listen(currentPort, () => {
-    console.log(`✅ [ProxiSpeak] Server actively listening on http://localhost:${currentPort}`);
-    console.log(`📡 [Socket.io] Real-time engine ready for spatial audio signaling.`);
-    console.log('------------------------------------------------------------');
-  });
-};
-
-// 6. Graceful Shutdown
-const gracefulShutdown = async (signal) => {
-  console.log(`\n[Shutdown] Received ${signal}. Closing HTTP and WebSocket connections...`);
-
-  httpServer.close(async () => {
-    console.log('[Shutdown] HTTP & Socket.io servers terminated.');
-    try {
-      if (mongoose.connection.readyState === 1) {
-        await mongoose.connection.close(false);
-        console.log('[Shutdown] MongoDB connection closed.');
-      }
-      if (pubClient.isOpen) await pubClient.quit();
-      if (subClient.isOpen) await subClient.quit();
-      console.log('[Shutdown] Redis clients closed.');
-      process.exit(0);
-    } catch (err) {
-      console.error('[Shutdown] Error during clean exit:', err.message);
+    if (config.isProduction) {
+      console.error(`[Database] Fatal: cannot start in production without MongoDB: ${err.message}`);
       process.exit(1);
     }
-  });
+    console.warn(`[Database] MongoDB unavailable: ${err.message}. HTTP will report degraded health.`);
+  }
 
-  // Force exit if shutdown hangs
-  setTimeout(() => {
-    console.error('[Shutdown] Forced shutdown after timeout.');
+  if (await initRedis()) {
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log('[Pub/Sub] Socket.IO Redis adapter bound.');
+  } else {
+    console.warn('[Pub/Sub] Using single-instance in-memory adapter.');
+  }
+
+  try {
+    await new Promise((resolve, reject) => {
+      const onError = (err) => reject(err);
+      httpServer.once('error', onError);
+      httpServer.listen(config.port, () => {
+        httpServer.off('error', onError);
+        resolve();
+      });
+    });
+  } catch (err) {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[Server] Port ${config.port} is already in use. Set a different PORT and retry.`);
+    } else {
+      console.error(`[Server] Failed to start HTTP listener: ${err.message}`);
+    }
     process.exit(1);
-  }, 10000);
-};
+  }
+
+  console.log(`[ProxiSpeak] Listening on http://localhost:${config.port}`);
+  console.log('------------------------------------------------------------');
+  return { app, httpServer, io };
+}
+
+// ---------------------------------------------------------------------------
+// 6. Graceful shutdown
+// ---------------------------------------------------------------------------
+let shuttingDown = false;
+
+export async function gracefulShutdown(signal = 'manual') {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n[Shutdown] Received ${signal}. Closing services...`);
+
+  const forceExit = setTimeout(() => {
+    console.error('[Shutdown] Forced exit after timeout.');
+    process.exit(1);
+  }, config.shutdownTimeoutMs);
+
+  try {
+    // Stop accepting connections and disconnect sockets first, so the socket
+    // 'disconnect' handlers can still reach MongoDB to clean up sessions.
+    await new Promise((resolve) => io.close(resolve));
+    if (httpServer.listening) {
+      await new Promise((resolve) => httpServer.close(() => resolve()));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150)); // let async cleanup drain
+
+    await closeRedis();
+    await closeDB();
+
+    clearTimeout(forceExit);
+    console.log('[Shutdown] Complete.');
+    process.exit(0);
+  } catch (err) {
+    console.error(`[Shutdown] Error: ${err.message}`);
+    process.exit(1);
+  }
+}
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
-// Execute initialization
-bootstrap();
+if (config.autoStart) {
+  startServer();
+}
 
 export { app, httpServer, io };

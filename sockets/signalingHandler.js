@@ -1,6 +1,9 @@
 import UserSession from '../models/UserSession.js';
+import { config } from '../config/env.js';
 
-const PROXIMITY_RADIUS = Number(process.env.PROXIMITY_RADIUS) || 100; // 100 pixels in virtual office space
+// Read through the validated config so .env is always applied (the previous
+// code read process.env at import time, before dotenv.config() had run).
+const PROXIMITY_RADIUS = config.proximityRadius; // virtual-office pixels
 
 /**
  * Registers all real-time signaling, geospatial proximity tracking,
