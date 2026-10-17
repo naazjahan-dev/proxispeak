@@ -1,5 +1,6 @@
 import UserSession from '../models/UserSession.js';
 import { config } from '../config/env.js';
+import { parseCoordinates } from '../utils/coordinates.js';
 
 // Read through the validated config so .env is always applied (the previous
 // code read process.env at import time, before dotenv.config() had run).
@@ -21,20 +22,25 @@ export const registerSignalingHandler = (io, socket) => {
    */
   socket.on('join-room', async (data, callback) => {
     try {
-      const { userId, roomId } = data;
-      // Extract [x, y] coordinates safely
-      let coordinates = [0, 0];
-      if (Array.isArray(data.coordinates) && data.coordinates.length === 2) {
-        coordinates = data.coordinates;
-      } else if (typeof data.x === 'number' && typeof data.y === 'number') {
-        coordinates = [data.x, data.y];
-      }
+      const payload = data && typeof data === 'object' ? data : {};
+      const { userId, roomId } = payload;
 
       if (!userId || !roomId) {
         const errorMsg = 'userId and roomId are required to join room';
         if (typeof callback === 'function') callback({ success: false, error: errorMsg });
-        return socket.emit('error', { message: errorMsg });
+        return socket.emit('error', { event: 'join-room', message: errorMsg });
       }
+
+      // Coordinates are optional on join (default origin), but if provided they
+      // must be valid finite planar [x, y] values.
+      const coordsProvided =
+        payload.coordinates !== undefined || payload.x !== undefined || payload.y !== undefined;
+      const parsed = parseCoordinates(payload, { maxAbs: config.maxCoordinateAbs });
+      if (coordsProvided && !parsed.ok) {
+        if (typeof callback === 'function') callback({ success: false, error: parsed.error });
+        return socket.emit('error', { event: 'join-room', message: parsed.error });
+      }
+      const coordinates = parsed.ok ? parsed.coordinates : [0, 0];
 
       // Bind socket metadata for fast access during disconnect
       socket.userId = userId;
@@ -98,19 +104,20 @@ export const registerSignalingHandler = (io, socket) => {
    */
   socket.on('update-position', async (data) => {
     try {
-      const roomId = socket.roomId || data.roomId;
-      const userId = socket.userId || data.userId;
+      const payload = data && typeof data === 'object' ? data : {};
+      // Trust the server-side socket binding, never client-supplied identity.
+      const roomId = socket.roomId;
+      const userId = socket.userId;
 
-      let coordinates = null;
-      if (Array.isArray(data.coordinates) && data.coordinates.length === 2) {
-        coordinates = data.coordinates;
-      } else if (typeof data.x === 'number' && typeof data.y === 'number') {
-        coordinates = [data.x, data.y];
+      if (!roomId || !userId) {
+        return socket.emit('error', { event: 'update-position', message: 'join a room before updating position' });
       }
 
-      if (!coordinates || !roomId) {
-        return socket.emit('error', { message: 'Valid coordinates [x, y] and roomId are required' });
+      const parsed = parseCoordinates(payload, { maxAbs: config.maxCoordinateAbs });
+      if (!parsed.ok) {
+        return socket.emit('error', { event: 'update-position', message: parsed.error });
       }
+      const coordinates = parsed.coordinates;
 
       const startTime = performance.now();
 
