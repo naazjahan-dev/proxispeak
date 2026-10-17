@@ -14,20 +14,12 @@ const indexes = UserSession.schema.indexes();
 console.log('UserSession Registered Indexes:');
 console.log(JSON.stringify(indexes, null, 2));
 
-const has2dsphere = indexes.some(([indexSpec]) => indexSpec.location === '2dsphere');
-const hasRoomSpatialCompound = indexes.some(([indexSpec]) => indexSpec.roomId === 1 && indexSpec.location === '2dsphere');
+const hasRoomIsActive = indexes.some(([indexSpec]) => indexSpec.roomId === 1 && indexSpec.isActive === 1);
 
-if (has2dsphere) {
-  console.log('✓ [PASS] Strict 2dsphere index on location field is defined.');
+if (hasRoomIsActive) {
+  console.log('✓ [PASS] Compound index on { roomId: 1, isActive: 1 } is defined.');
 } else {
-  console.error('✗ [FAIL] Missing 2dsphere index on location field!');
-  process.exit(1);
-}
-
-if (hasRoomSpatialCompound) {
-  console.log('✓ [PASS] Compound index on { roomId: 1, location: "2dsphere" } is defined for sub-20ms spatial queries.');
-} else {
-  console.error('✗ [FAIL] Missing compound room + 2dsphere index!');
+  console.error('✗ [FAIL] Missing compound index { roomId: 1, isActive: 1 }!');
   process.exit(1);
 }
 
