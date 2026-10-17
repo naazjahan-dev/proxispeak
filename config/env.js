@@ -87,6 +87,9 @@ export function parseConfig(env = process.env) {
     // longer connected; the TTL index is a backstop for crashed processes.
     sessionSweepIntervalMs: toNumber(env.SESSION_SWEEP_INTERVAL_MS, 60000),
     sessionTtlSeconds: toNumber(env.SESSION_TTL_SECONDS, 86400),
+    // Per-socket event rate limits (token bucket, tokens per second).
+    rateLimitPositionPerSec: toNumber(env.RATE_LIMIT_POSITION_PER_SEC, 30),
+    rateLimitSignalPerSec: toNumber(env.RATE_LIMIT_SIGNAL_PER_SEC, 60),
     // Internal: lets tests import the server without binding a port.
     autoStart: toBoolean(env.PROXISPEAK_AUTOSTART, true),
   };
@@ -131,6 +134,14 @@ export function validateConfig(config, env = process.env) {
 
   if (!Number.isFinite(config.sessionTtlSeconds) || config.sessionTtlSeconds <= 0) {
     errors.push(`SESSION_TTL_SECONDS must be a positive number (received "${env.SESSION_TTL_SECONDS ?? config.sessionTtlSeconds}")`);
+  }
+
+  if (!Number.isFinite(config.rateLimitPositionPerSec) || config.rateLimitPositionPerSec <= 0) {
+    errors.push(`RATE_LIMIT_POSITION_PER_SEC must be a positive number (received "${env.RATE_LIMIT_POSITION_PER_SEC ?? config.rateLimitPositionPerSec}")`);
+  }
+
+  if (!Number.isFinite(config.rateLimitSignalPerSec) || config.rateLimitSignalPerSec <= 0) {
+    errors.push(`RATE_LIMIT_SIGNAL_PER_SEC must be a positive number (received "${env.RATE_LIMIT_SIGNAL_PER_SEC ?? config.rateLimitSignalPerSec}")`);
   }
 
   if (!/^mongodb(\+srv)?:\/\//.test(config.mongoUri)) {
