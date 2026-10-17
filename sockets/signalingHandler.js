@@ -77,8 +77,36 @@ export const registerSignalingHandler = (io, socket) => {
       const coordinates = parsed.ok ? parsed.coordinates : [0, 0];
 
       // Bind identity to the socket for the lifetime of the connection.
+      const previousRoom = socket.roomId;
       socket.userId = userId;
       socket.roomId = roomId;
+
+      // Re-join/room switch: leave the previous Socket.IO room and tell it.
+      if (previousRoom && previousRoom !== roomId) {
+        await socket.leave(previousRoom);
+        socket.to(previousRoom).emit('peer-left', {
+          socketId: socket.id,
+          userId: socket.userId,
+          roomId: previousRoom,
+        });
+      }
+
+      // Duplicate connection: if the same user is already connected on another
+      // socket, replace it so one user has one live session.
+      const duplicateSessions = await UserSession.find({
+        userId,
+        isActive: true,
+        socketId: { $ne: socket.id },
+      })
+        .select('socketId')
+        .lean();
+      for (const duplicate of duplicateSessions) {
+        const duplicateSocket = io.sockets.sockets.get(duplicate.socketId);
+        if (duplicateSocket) {
+          duplicateSocket.emit('session-replaced', { userId, roomId });
+          duplicateSocket.disconnect(true);
+        }
+      }
 
       await socket.join(roomId);
       await UserSession.upsertSession(socket.id, userId, roomId, coordinates);
@@ -86,6 +114,8 @@ export const registerSignalingHandler = (io, socket) => {
       const startTime = performance.now();
       const nearbyPeers = await UserSession.findNearbyPeers(roomId, coordinates, PROXIMITY_RADIUS, socket.id);
       const queryDurationMs = Number((performance.now() - startTime).toFixed(2));
+
+      socket.data.nearbySocketIds = new Set(nearbyPeers.map((peer) => peer.socketId));
 
       const responsePayload = {
         success: true,
@@ -102,6 +132,10 @@ export const registerSignalingHandler = (io, socket) => {
       socket.to(roomId).emit('peer-joined', { userId, socketId: socket.id, coordinates });
 
       nearbyPeers.forEach((peer) => {
+        const peerSocket = io.sockets.sockets.get(peer.socketId);
+        if (peerSocket && peerSocket.data.nearbySocketIds instanceof Set) {
+          peerSocket.data.nearbySocketIds.add(socket.id);
+        }
         io.to(peer.socketId).emit('peer-entered-proximity', {
           userId,
           socketId: socket.id,
@@ -145,6 +179,37 @@ export const registerSignalingHandler = (io, socket) => {
         UserSession.findNearbyPeers(socket.roomId, coordinates, PROXIMITY_RADIUS, socket.id),
       ]);
       const queryDurationMs = Number((performance.now() - startTime).toFixed(2));
+
+      // Emit proximity enter/leave deltas so peers can start or tear down
+      // WebRTC connections as avatars move in and out of range.
+      const previous = socket.data.nearbySocketIds instanceof Set ? socket.data.nearbySocketIds : new Set();
+      const next = new Set(nearbyPeers.map((peer) => peer.socketId));
+
+      for (const peer of nearbyPeers) {
+        if (previous.has(peer.socketId)) continue;
+        const peerSocket = io.sockets.sockets.get(peer.socketId);
+        if (peerSocket && peerSocket.data.nearbySocketIds instanceof Set) {
+          peerSocket.data.nearbySocketIds.add(socket.id);
+        }
+        io.to(peer.socketId).emit('peer-entered-proximity', {
+          userId: socket.userId,
+          socketId: socket.id,
+          coordinates,
+        });
+      }
+      for (const peerSocketId of previous) {
+        if (next.has(peerSocketId)) continue;
+        const peerSocket = io.sockets.sockets.get(peerSocketId);
+        if (peerSocket && peerSocket.data.nearbySocketIds instanceof Set) {
+          peerSocket.data.nearbySocketIds.delete(socket.id);
+        }
+        io.to(peerSocketId).emit('peer-left-proximity', {
+          userId: socket.userId,
+          socketId: socket.id,
+          roomId: socket.roomId,
+        });
+      }
+      socket.data.nearbySocketIds = next;
 
       socket.emit('proximity-update', { coordinates, nearbyPeers, queryDurationMs });
       socket.to(socket.roomId).emit('peer-position-updated', {
