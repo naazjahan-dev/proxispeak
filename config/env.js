@@ -83,6 +83,10 @@ export function parseConfig(env = process.env) {
     maxCoordinateAbs,
     jsonBodyLimit,
     shutdownTimeoutMs,
+    // Session lifecycle. The janitor deactivates sessions whose socket is no
+    // longer connected; the TTL index is a backstop for crashed processes.
+    sessionSweepIntervalMs: toNumber(env.SESSION_SWEEP_INTERVAL_MS, 60000),
+    sessionTtlSeconds: toNumber(env.SESSION_TTL_SECONDS, 86400),
     // Internal: lets tests import the server without binding a port.
     autoStart: toBoolean(env.PROXISPEAK_AUTOSTART, true),
   };
@@ -119,6 +123,14 @@ export function validateConfig(config, env = process.env) {
 
   if (!Number.isFinite(config.shutdownTimeoutMs) || config.shutdownTimeoutMs <= 0) {
     errors.push(`SHUTDOWN_TIMEOUT_MS must be a positive number (received "${env.SHUTDOWN_TIMEOUT_MS ?? config.shutdownTimeoutMs}")`);
+  }
+
+  if (!Number.isFinite(config.sessionSweepIntervalMs) || config.sessionSweepIntervalMs <= 0) {
+    errors.push(`SESSION_SWEEP_INTERVAL_MS must be a positive number (received "${env.SESSION_SWEEP_INTERVAL_MS ?? config.sessionSweepIntervalMs}")`);
+  }
+
+  if (!Number.isFinite(config.sessionTtlSeconds) || config.sessionTtlSeconds <= 0) {
+    errors.push(`SESSION_TTL_SECONDS must be a positive number (received "${env.SESSION_TTL_SECONDS ?? config.sessionTtlSeconds}")`);
   }
 
   if (!/^mongodb(\+srv)?:\/\//.test(config.mongoUri)) {

@@ -104,6 +104,24 @@ io.on('connection', (socket) => {
 // ---------------------------------------------------------------------------
 // 5. Bootstrap
 // ---------------------------------------------------------------------------
+let sessionJanitor = null;
+
+/**
+ * Deactivate sessions whose socket is no longer connected. Runs at boot
+ * (clearing sessions from a previous process) and on a timer.
+ */
+async function sweepOrphanSessions() {
+  try {
+    const liveSocketIds = new Set(io.sockets.sockets.keys());
+    const deactivated = await UserSession.sweepOrphanSessions(liveSocketIds);
+    if (deactivated > 0) {
+      console.log(`[Sessions] Deactivated ${deactivated} orphaned session(s).`);
+    }
+  } catch (err) {
+    console.warn(`[Sessions] Orphan sweep skipped: ${err.message}`);
+  }
+}
+
 export async function startServer() {
   try {
     assertValidConfig(config);
@@ -120,6 +138,9 @@ export async function startServer() {
   try {
     await connectDB();
     console.log('[Database] MongoDB connection established.');
+    await sweepOrphanSessions();
+    sessionJanitor = setInterval(sweepOrphanSessions, config.sessionSweepIntervalMs);
+    sessionJanitor.unref();
   } catch (err) {
     if (config.isProduction) {
       console.error(`[Database] Fatal: cannot start in production without MongoDB: ${err.message}`);
@@ -176,6 +197,7 @@ export async function gracefulShutdown(signal = 'manual') {
   try {
     // Stop accepting connections and disconnect sockets first, so the socket
     // 'disconnect' handlers can still reach MongoDB to clean up sessions.
+    if (sessionJanitor) clearInterval(sessionJanitor);
     await new Promise((resolve) => io.close(resolve));
     if (httpServer.listening) {
       await new Promise((resolve) => httpServer.close(() => resolve()));

@@ -204,10 +204,15 @@ export const registerSignalingHandler = (io, socket) => {
   socket.on('disconnect', async (reason) => {
     console.log(`[Socket.io] Client disconnected: ${socket.id} (Reason: ${reason})`);
     try {
-      const session = await UserSession.findOneAndDelete({ socketId: socket.id }).lean();
+      const session = await UserSession.deactivateSession(socket.id);
       if (session) {
-        console.log(`[Session] Cleaned up session for user ${session.userId} in room ${session.roomId}`);
+        console.log(`[Session] Deactivated session for user ${session.userId} in room ${session.roomId}`);
         // Notify peers in the room
+        io.to(session.roomId).emit('peer-left', {
+          socketId: socket.id,
+          userId: session.userId,
+          roomId: session.roomId,
+        });
         io.to(session.roomId).emit('peer-disconnected', {
           socketId: socket.id,
           userId: session.userId,
