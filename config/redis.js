@@ -27,21 +27,36 @@ export const subClient = pubClient.duplicate();
 
 // 'error' listeners must be attached before connect(), otherwise Node treats a
 // failed connection as an unhandled 'error' event and crashes the process.
-pubClient.on('connect', () => console.log('[Redis Pub] Connected'));
+// During a failed initial connect the client retries, emitting repeated
+// errors; log only the first per client to keep the startup log readable.
+const errorLogged = new Set();
+const makeErrorLogger = (label) => (err) => {
+  if (errorLogged.has(label)) return;
+  errorLogged.add(label);
+  console.warn(`[${label}] ${err.message}`);
+};
+
+pubClient.on('connect', () => {
+  errorLogged.delete('Redis Pub');
+  console.log('[Redis Pub] Connected');
+});
 pubClient.on('ready', () => console.log('[Redis Pub] Ready'));
 pubClient.on('end', () => {
   redisAvailable = false;
   console.warn('[Redis Pub] Connection closed');
 });
-pubClient.on('error', (err) => console.warn(`[Redis Pub] ${err.message}`));
+pubClient.on('error', makeErrorLogger('Redis Pub'));
 
-subClient.on('connect', () => console.log('[Redis Sub] Connected'));
+subClient.on('connect', () => {
+  errorLogged.delete('Redis Sub');
+  console.log('[Redis Sub] Connected');
+});
 subClient.on('ready', () => console.log('[Redis Sub] Ready'));
 subClient.on('end', () => {
   redisAvailable = false;
   console.warn('[Redis Sub] Connection closed');
 });
-subClient.on('error', (err) => console.warn(`[Redis Sub] ${err.message}`));
+subClient.on('error', makeErrorLogger('Redis Sub'));
 
 /**
  * Attempt to connect both Redis clients.
@@ -66,6 +81,12 @@ export const initRedis = async () => {
     return true;
   } catch (error) {
     redisAvailable = false;
+    // Stop the clients so they do not keep retrying (and logging) in the
+    // background after we have already decided to run without Redis.
+    await Promise.allSettled([
+      pubClient.isOpen ? pubClient.disconnect() : Promise.resolve(),
+      subClient.isOpen ? subClient.disconnect() : Promise.resolve(),
+    ]);
     console.warn(`[Redis] Unavailable (${error.message}); using in-memory adapter.`);
     return false;
   }
