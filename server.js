@@ -174,15 +174,32 @@ export async function startServer() {
     process.exit(1);
   }
 
-  console.log(`[ProxiSpeak] Listening on http://localhost:${config.port}`);
+  const actualPort = httpServer.address().port;
+  console.log(`[ProxiSpeak] Listening on http://localhost:${actualPort}`);
   console.log('------------------------------------------------------------');
-  return { app, httpServer, io };
+  return { app, httpServer, io, port: actualPort };
 }
 
 // ---------------------------------------------------------------------------
 // 6. Graceful shutdown
 // ---------------------------------------------------------------------------
 let shuttingDown = false;
+
+/**
+ * Close Socket.IO, HTTP, Redis and MongoDB without terminating the process.
+ * Used by gracefulShutdown() and by integration tests.
+ */
+export async function stopServer() {
+  if (sessionJanitor) clearInterval(sessionJanitor);
+  sessionJanitor = null;
+  await new Promise((resolve) => io.close(resolve));
+  if (httpServer.listening) {
+    await new Promise((resolve) => httpServer.close(() => resolve()));
+  }
+  await new Promise((resolve) => setTimeout(resolve, 150)); // let async cleanup drain
+  await closeRedis();
+  await closeDB();
+}
 
 export async function gracefulShutdown(signal = 'manual') {
   if (shuttingDown) return;
@@ -197,16 +214,7 @@ export async function gracefulShutdown(signal = 'manual') {
   try {
     // Stop accepting connections and disconnect sockets first, so the socket
     // 'disconnect' handlers can still reach MongoDB to clean up sessions.
-    if (sessionJanitor) clearInterval(sessionJanitor);
-    await new Promise((resolve) => io.close(resolve));
-    if (httpServer.listening) {
-      await new Promise((resolve) => httpServer.close(() => resolve()));
-    }
-    await new Promise((resolve) => setTimeout(resolve, 150)); // let async cleanup drain
-
-    await closeRedis();
-    await closeDB();
-
+    await stopServer();
     clearTimeout(forceExit);
     console.log('[Shutdown] Complete.');
     process.exit(0);

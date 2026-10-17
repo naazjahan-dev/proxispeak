@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 
-const SERVER_URL = 'http://localhost:5001';
+const SERVER_URL = process.env.TEST_URL || `http://localhost:${process.env.PORT || 5000}`;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

@@ -7,7 +7,11 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test"
+    "test": "node --test test/",
+    "test:watch": "node --test --watch test/",
+    "test:schema": "node scripts/verification.js",
+    "test:smoke": "node scripts/self-test.js",
+    "test:e2e": "node scripts/e2e-simulation.js"
   },
   "keywords": [
     "proxispeak",

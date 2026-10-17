@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 import mongoose from 'mongoose';
-import { httpServer, io as serverIo } from '../server.js';
+import { httpServer, stopServer } from '../server.js';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -10,10 +10,15 @@ async function runSelfTest() {
   console.log('----------------------------------------------------');
 
   // Wait for server to finish bootstrapping (MongoDB & Socket.io)
-  await delay(1500);
-
-  const address = httpServer.address();
-  const port = typeof address === 'object' && address ? address.port : 5000;
+  let port = 0;
+  for (let i = 0; i < 30; i++) {
+    const address = httpServer.address();
+    if (typeof address === 'object' && address && address.port) {
+      port = address.port;
+      break;
+    }
+    await delay(200);
+  }
   const SERVER_URL = `http://localhost:${port}`;
   console.log(`Testing against server running on port: ${port}`);
 
@@ -110,8 +115,7 @@ async function runSelfTest() {
   clientA.disconnect();
   clientB.disconnect();
 
-  serverIo.close();
-  httpServer.close();
+  await stopServer();
   if (mongoose.connection.readyState === 1) {
     await mongoose.connection.close(false);
   }

@@ -112,8 +112,8 @@ export function validateConfig(config, env = process.env) {
     errors.push(`NODE_ENV must be one of ${VALID_ENVS.join(', ')} (received "${config.nodeEnv}")`);
   }
 
-  if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
-    errors.push(`PORT must be an integer between 1 and 65535 (received "${env.PORT ?? config.port}")`);
+  if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) {
+    errors.push(`PORT must be an integer between 0 and 65535 (0 = ephemeral) (received "${env.PORT ?? config.port}")`);
   }
 
   if (!Number.isFinite(config.proximityRadius) || config.proximityRadius <= 0) {
