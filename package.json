@@ -1,0 +1,35 @@
+{
+  "name": "proxispeak-backend",
+  "version": "1.0.0",
+  "description": "Real-time geospatial audio ecosystem backend for virtual offices",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "proxispeak",
+    "webrtc",
+    "geospatial",
+    "socket.io",
+    "mongodb",
+    "redis",
+    "spatial-audio"
+  ],
+  "author": "ProxiSpeak Systems Team",
+  "license": "MIT",
+  "dependencies": {
+    "@socket.io/redis-adapter": "^8.3.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongoose": "^8.9.5",
+    "redis": "^4.7.0",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
+  }
+}
