@@ -41,36 +41,41 @@ async function runSelfTest() {
 
   console.log(`✓ Both clients connected: Client A (${clientA.id}) & Client B (${clientB.id})`);
 
-  // 1. Client A joins room at [50, 50]
+  // Geographic coordinates: London OpenStreetMap hub
+  const aliceCoords = [-0.1278, 51.5074];
+  const bobCoordsNearby = [-0.1276, 51.5074]; // ~13.9m east of Alice (within 100m proximity)
+
+  // 1. Client A joins room at aliceCoords
   const joinA = await new Promise((resolve) => {
     clientA.emit(
       'join-room',
-      { userId: 'user-alice', roomId: 'engineering-pod', coordinates: [50, 50] },
+      { userId: 'user-alice', roomId: 'engineering-pod', coordinates: aliceCoords },
       resolve
     );
   });
-  console.log(`✓ Alice joined room: ${joinA.queryDurationMs}ms (nearby peers: ${joinA.nearbyPeers.length})`);
+  console.log(`✓ Alice joined room: ${joinA.queryDurationMs}ms (geohash: ${joinA.geohash}, nearby peers: ${joinA.nearbyPeers.length})`);
 
-  // 2. Client B joins within 15px at [60, 60] (threshold is 100px)
+  // 2. Client B joins within 14m at bobCoordsNearby (threshold is 100m)
   let peerAEnteredProximity = false;
   clientA.on('peer-entered-proximity', (peer) => {
     peerAEnteredProximity = true;
-    console.log(`📡 Alice received peer-entered-proximity: ${peer.userId}`);
+    console.log(`📡 Alice received peer-entered-proximity: ${peer.userId} (distance: ${peer.distance}m, gain: ${peer.spatialGain})`);
   });
 
   const joinB = await new Promise((resolve) => {
     clientB.emit(
       'join-room',
-      { userId: 'user-bob', roomId: 'engineering-pod', coordinates: [60, 60] },
+      { userId: 'user-bob', roomId: 'engineering-pod', coordinates: bobCoordsNearby },
       resolve
     );
   });
 
-  console.log(`✓ Bob joined room: ${joinB.queryDurationMs}ms (nearby peers: ${joinB.nearbyPeers.length})`);
-  console.log(`✓ Bob detected Alice: ${joinB.nearbyPeers.some((p) => p.userId === 'user-alice')}`);
+  console.log(`✓ Bob joined room: ${joinB.queryDurationMs}ms (geohash: ${joinB.geohash}, nearby peers: ${joinB.nearbyPeers.length})`);
+  const detectedAlice = joinB.nearbyPeers.some((p) => p.userId === 'user-alice');
+  console.log(`✓ Bob detected Alice: ${detectedAlice}`);
 
   if (joinB.queryDurationMs < 20) {
-    console.log(`🎯 [PASS] Geospatial MongoDB $near query completed in ${joinB.queryDurationMs}ms (< 20ms constraint met!)`);
+    console.log(`🎯 [PASS] Geospatial MongoDB $near 2dsphere query completed in ${joinB.queryDurationMs}ms (< 20ms constraint met!)`);
   }
 
   // 3. WebRTC signaling relay test
@@ -106,19 +111,16 @@ async function runSelfTest() {
     clientA.once('proximity-update', resolve);
     clientA.emit('update-position', {
       roomId: 'engineering-pod',
-      coordinates: [52, 52],
+      coordinates: [-0.12775, 51.50742],
     });
   });
-  console.log(`✓ Position updated in ${updateRes.queryDurationMs}ms. Peers in proximity: ${updateRes.nearbyPeers.length}`);
+  console.log(`✓ Position updated in ${updateRes.queryDurationMs}ms (geohash: ${updateRes.geohash}). Peers in proximity: ${updateRes.nearbyPeers.length}`);
 
   // 5. Cleanup
   clientA.disconnect();
   clientB.disconnect();
 
   await stopServer();
-  if (mongoose.connection.readyState === 1) {
-    await mongoose.connection.close(false);
-  }
 
   console.log('----------------------------------------------------');
   console.log('🎉 PROXISPEAK BACKEND FULL VERIFICATION COMPLETE!');

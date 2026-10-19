@@ -9,6 +9,7 @@ import { connectDB, closeDB, isDbConnected } from './config/db.js';
 import { pubClient, subClient, initRedis, isRedisReady, closeRedis } from './config/redis.js';
 import { registerSignalingHandler } from './sockets/signalingHandler.js';
 import UserSession from './models/UserSession.js';
+import { encodeGeohash, decodeGeohash, getGeohashWithNeighbors } from './utils/geohash.js';
 
 // ---------------------------------------------------------------------------
 // 1. Express app
@@ -23,6 +24,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.disable('x-powered-by');
 app.use(express.json({ limit: config.jsonBodyLimit }));
+app.use(express.static('public', { index: false }));
 
 // ---------------------------------------------------------------------------
 // 2. HTTP server + Socket.IO
@@ -42,13 +44,22 @@ const io = new Server(httpServer, {
 app.get('/', (req, res) => {
   res.json({
     service: 'ProxiSpeak Backend',
-    description: 'Real-time proximity audio and WebRTC signaling engine for virtual offices',
+    description: 'Real-time geospatial audio and WebRTC signaling engine for virtual offices',
     status: 'online',
     version: '1.0.0',
     proximityRadius: config.proximityRadius,
+    proximityRadiusMeters: config.proximityRadius,
     proximityModel: 'planar-euclidean',
+    geospatialEngine: 'MongoDB 2dsphere ($near)',
+    geohash: 'Enabled (ngeohash precision 7)',
+    distanceFilter: 'Haversine formula (meters)',
+    mapVisualizer: '/map',
     pubsub: isRedisReady() ? 'redis-adapter' : 'in-memory-adapter',
   });
+});
+
+app.get('/map', (req, res) => {
+  res.sendFile('index.html', { root: 'public' });
 });
 
 app.get('/health', (req, res) => {
@@ -66,6 +77,60 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Geohash utility endpoints
+app.get('/api/geohash/encode', (req, res) => {
+  const lat = Number(req.query.lat);
+  const lon = Number(req.query.lon ?? req.query.lng);
+  const precision = req.query.precision ? Number(req.query.precision) : 7;
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return res.status(400).json({ error: 'lat and lon query params must be finite numbers' });
+  }
+
+  try {
+    const hash = encodeGeohash([lon, lat], precision);
+    const neighbors = getGeohashWithNeighbors(hash);
+    res.json({ lat, lon, precision, geohash: hash, neighbors });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/geohash/:hash/neighbors', (req, res) => {
+  const hash = String(req.params.hash || '').trim();
+  if (!hash) return res.status(400).json({ error: 'hash is required' });
+
+  try {
+    const decoded = decodeGeohash(hash);
+    const neighbors = getGeohashWithNeighbors(hash);
+    res.json({ geohash: hash, center: decoded, neighbors });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/rooms/:roomId/geohash/:hash', async (req, res, next) => {
+  try {
+    const roomId = String(req.params.roomId || '').trim();
+    const hash = String(req.params.hash || '').trim();
+    if (!roomId) return res.status(400).json({ error: 'roomId is required' });
+    if (!hash) return res.status(400).json({ error: 'hash is required' });
+
+    const targetHashes = getGeohashWithNeighbors(hash);
+    const activeUsers = await UserSession.find({
+      roomId,
+      isActive: true,
+      geohash: { $in: targetHashes },
+    })
+      .select('userId socketId roomId location geohash lastActiveAt')
+      .lean();
+
+    res.json({ roomId, queryGeohash: hash, neighborCells: targetHashes, count: activeUsers.length, users: activeUsers });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/rooms/:roomId/users', async (req, res, next) => {
   try {
     const roomId = String(req.params.roomId || '').trim();
@@ -74,7 +139,7 @@ app.get('/api/rooms/:roomId/users', async (req, res, next) => {
     }
 
     const activeUsers = await UserSession.find({ roomId, isActive: true })
-      .select('userId socketId location lastActiveAt')
+      .select('userId socketId location geohash lastActiveAt')
       .lean();
 
     res.json({ roomId, count: activeUsers.length, users: activeUsers });
@@ -138,6 +203,7 @@ export async function startServer() {
   try {
     await connectDB();
     console.log('[Database] MongoDB connection established.');
+    await UserSession.createIndexes().catch(() => {});
     await sweepOrphanSessions();
     sessionJanitor = setInterval(sweepOrphanSessions, config.sessionSweepIntervalMs);
     sessionJanitor.unref();
@@ -156,26 +222,38 @@ export async function startServer() {
     console.warn('[Pub/Sub] Using single-instance in-memory adapter.');
   }
 
-  try {
-    await new Promise((resolve, reject) => {
-      const onError = (err) => reject(err);
-      httpServer.once('error', onError);
-      httpServer.listen(config.port, () => {
-        httpServer.off('error', onError);
-        resolve();
+  let targetPort = config.port;
+  let bound = false;
+
+  while (!bound && targetPort <= config.port + 10) {
+    try {
+      await new Promise((resolve, reject) => {
+        const onError = (err) => reject(err);
+        httpServer.once('error', onError);
+        httpServer.listen(targetPort, () => {
+          httpServer.off('error', onError);
+          bound = true;
+          resolve();
+        });
       });
-    });
-  } catch (err) {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`[Server] Port ${config.port} is already in use. Set a different PORT and retry.`);
-    } else {
-      console.error(`[Server] Failed to start HTTP listener: ${err.message}`);
+    } catch (err) {
+      if (err.code === 'EADDRINUSE' && !config.isProduction && config.port !== 0) {
+        console.warn(`⚠️ [Server] Port ${targetPort} is in use. Attempting fallback to port ${targetPort + 1}...`);
+        targetPort++;
+      } else {
+        if (err.code === 'EADDRINUSE') {
+          console.error(`[Server] Port ${targetPort} is already in use. Set a different PORT and retry.`);
+        } else {
+          console.error(`[Server] Failed to start HTTP listener: ${err.message}`);
+        }
+        process.exit(1);
+      }
     }
-    process.exit(1);
   }
 
   const actualPort = httpServer.address().port;
   console.log(`[ProxiSpeak] Listening on http://localhost:${actualPort}`);
+  console.log(`[Leaflet Map] OpenStreetMap visualizer ready at: http://localhost:${actualPort}/map`);
   console.log('------------------------------------------------------------');
   return { app, httpServer, io, port: actualPort };
 }

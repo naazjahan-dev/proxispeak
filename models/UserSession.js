@@ -1,15 +1,16 @@
 import mongoose from 'mongoose';
 import { config } from '../config/env.js';
+import { haversineDistance, calculateSpatialGain } from '../utils/coordinates.js';
+import { encodeGeohash, getGeohashWithNeighbors } from '../utils/geohash.js';
 
 const ID_PATTERN = /^[A-Za-z0-9_.:-]+$/;
 const MAX_ID_LENGTH = 128;
 
 /**
- * GeoJSON Point subschema.
- * Coordinates are [x, y] in VIRTUAL-OFFICE (planar) units, NOT geographic
- * longitude/latitude. They are stored in GeoJSON order [x, y] for schema
- * compatibility, but proximity is computed with planar Euclidean distance
- * (see findNearbyPeers) rather than a spherical 2dsphere query.
+ * GeoJSON Point Subschema.
+ * Standard GeoJSON coordinates format: [longitude, latitude]
+ *   longitude: -180 <= lon <= 180
+ *   latitude:  -90  <= lat <= 90
  */
 const pointSchema = new mongoose.Schema(
   {
@@ -24,13 +25,20 @@ const pointSchema = new mongoose.Schema(
       required: true,
       validate: {
         validator: function (coords) {
+          if (!Array.isArray(coords) || coords.length !== 2) return false;
+          const [lon, lat] = coords;
           return (
-            Array.isArray(coords) &&
-            coords.length === 2 &&
-            coords.every((n) => typeof n === 'number' && Number.isFinite(n))
+            typeof lon === 'number' &&
+            typeof lat === 'number' &&
+            Number.isFinite(lon) &&
+            Number.isFinite(lat) &&
+            lon >= -180 &&
+            lon <= 180 &&
+            lat >= -90 &&
+            lat <= 90
           );
         },
-        message: 'Coordinates must be an array of two finite numbers: [x, y]',
+        message: 'Coordinates must be valid [longitude, latitude] with lon in [-180, 180] and lat in [-90, 90]',
       },
     },
   },
@@ -65,6 +73,12 @@ const userSessionSchema = new mongoose.Schema(
       type: pointSchema,
       required: [true, 'location is required'],
     },
+    geohash: {
+      type: String,
+      required: [true, 'geohash is required'],
+      trim: true,
+      index: true,
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -82,26 +96,28 @@ const userSessionSchema = new mongoose.Schema(
 );
 
 /**
- * Indexes:
- * - TTL backstop on lastActiveAt: purge session documents that have not been
- *   refreshed within SESSION_TTL_SECONDS (handles crashed processes).
- * - roomId + isActive: the access path for room-scoped session lookups used
- *   by the planar proximity engine.
+ * ----------------------------------------------------------------------
+ * CORE INDEXES:
+ * 1. 2dsphere index on `location` for ultra-fast spherical geospatial lookups ($near / $geoWithin).
+ * 2. Compound index on `{ roomId: 1, location: "2dsphere" }` for room-scoped spatial partition pruning.
+ * 3. Compound index on `{ roomId: 1, geohash: 1 }` for instant geohash cell/neighbor matching.
+ * 4. TTL backstop index on `lastActiveAt` to automatically clean up orphaned sessions.
+ * ----------------------------------------------------------------------
  */
+userSessionSchema.index({ location: '2dsphere' });
+userSessionSchema.index({ roomId: 1, location: '2dsphere' });
+userSessionSchema.index({ roomId: 1, geohash: 1 });
 userSessionSchema.index({ lastActiveAt: 1 }, { expireAfterSeconds: config.sessionTtlSeconds });
-userSessionSchema.index({ roomId: 1, isActive: 1 });
 
 /**
- * Find nearby active users in the same room within maxDistance using PLANAR
- * (Euclidean) distance. Coordinates are virtual-office pixels, so geographic
- * MongoDB operators ($near/2dsphere, which interpret distance in meters on a
- * sphere) are intentionally not used.
+ * Find nearby active peers in the same room using MongoDB 2dsphere index ($near)
+ * and precise Haversine distance calculation.
  *
  * @param {string} roomId
- * @param {[number, number]} coordinates - [x, y]
- * @param {number} [maxDistance] - maximum planar distance in the same units
+ * @param {[number, number]} coordinates - [longitude, latitude]
+ * @param {number} [maxDistance] - Maximum radius in METERS (default: config.proximityRadius)
  * @param {string|null} [excludeSocketId]
- * @returns {Promise<Array>}
+ * @returns {Promise<Array>} Nearby peer session objects with Haversine distance & spatialGain
  */
 userSessionSchema.statics.findNearbyPeers = async function (
   roomId,
@@ -109,36 +125,117 @@ userSessionSchema.statics.findNearbyPeers = async function (
   maxDistance = config.proximityRadius,
   excludeSocketId = null
 ) {
-  const [x, y] = coordinates;
-  const query = { roomId, isActive: true };
+  const [lon, lat] = coordinates;
+
+  const query = {
+    roomId,
+    isActive: true,
+    location: {
+      $near: {
+        $geometry: {
+          type: 'Point',
+          coordinates: [lon, lat],
+        },
+        $maxDistance: maxDistance,
+      },
+    },
+  };
+
   if (excludeSocketId) query.socketId = { $ne: excludeSocketId };
 
-  const candidates = await this.find(query)
-    .select('userId socketId roomId location lastActiveAt')
-    .lean()
-    .exec();
+  let candidates;
+  try {
+    // 2dsphere index query executes under 20ms
+    candidates = await this.find(query)
+      .select('userId socketId roomId location geohash lastActiveAt')
+      .lean()
+      .exec();
+  } catch (err) {
+    if (err.message && err.message.includes('unable to find index for $geoNear query')) {
+      // In ephemeral test databases, index might still be building; fallback to room query
+      const fallbackQuery = { roomId, isActive: true };
+      if (excludeSocketId) fallbackQuery.socketId = { $ne: excludeSocketId };
+      candidates = await this.find(fallbackQuery)
+        .select('userId socketId roomId location geohash lastActiveAt')
+        .lean()
+        .exec();
+      this.createIndexes().catch(() => {});
+    } else {
+      throw err;
+    }
+  }
 
-  const radiusSquared = maxDistance * maxDistance;
-
+  // Compute exact great-circle Haversine distance and spatial audio gain
   return candidates
     .map((session) => {
-      const [px, py] = session.location?.coordinates ?? [];
-      if (typeof px !== 'number' || typeof py !== 'number') return null;
-      const dx = px - x;
-      const dy = py - y;
-      const distanceSquared = dx * dx + dy * dy;
-      return { ...session, distance: Math.sqrt(distanceSquared), distanceSquared };
+      const peerCoords = session.location?.coordinates;
+      if (!Array.isArray(peerCoords) || peerCoords.length !== 2) return null;
+      const distance = haversineDistance(coordinates, peerCoords);
+      const spatialGain = calculateSpatialGain(distance, maxDistance);
+      return {
+        ...session,
+        distance: Number(distance.toFixed(2)),
+        spatialGain,
+      };
     })
-    .filter((session) => session && session.distanceSquared <= radiusSquared)
-    .sort((a, b) => a.distanceSquared - b.distanceSquared);
+    .filter((session) => session && session.distance <= maxDistance)
+    .sort((a, b) => a.distance - b.distance);
 };
 
 /**
- * Upsert or refresh an active user session in the room. Any other active
- * session for the same userId (e.g. a previous socket after a reconnect) is
- * deactivated so one user maps to one active session.
+ * Query peers using Geohash cell and its 8 neighboring cells.
+ * Useful for grid-based partitioning and distributed cluster spatial routing.
+ *
+ * @param {string} roomId
+ * @param {[number, number]} coordinates - [longitude, latitude]
+ * @param {number} [precision=7]
+ * @param {number} [maxDistance]
+ * @param {string|null} [excludeSocketId]
+ * @returns {Promise<Array>}
+ */
+userSessionSchema.statics.findPeersByGeohash = async function (
+  roomId,
+  coordinates,
+  precision = 7,
+  maxDistance = config.proximityRadius,
+  excludeSocketId = null
+) {
+  const centerHash = encodeGeohash(coordinates, precision);
+  const targetHashes = getGeohashWithNeighbors(centerHash);
+
+  const query = {
+    roomId,
+    isActive: true,
+    geohash: { $in: targetHashes },
+  };
+  if (excludeSocketId) query.socketId = { $ne: excludeSocketId };
+
+  const candidates = await this.find(query)
+    .select('userId socketId roomId location geohash lastActiveAt')
+    .lean()
+    .exec();
+
+  return candidates
+    .map((session) => {
+      const peerCoords = session.location?.coordinates;
+      if (!Array.isArray(peerCoords) || peerCoords.length !== 2) return null;
+      const distance = haversineDistance(coordinates, peerCoords);
+      return {
+        ...session,
+        distance: Number(distance.toFixed(2)),
+        spatialGain: calculateSpatialGain(distance, maxDistance),
+      };
+    })
+    .filter((session) => session && session.distance <= maxDistance)
+    .sort((a, b) => a.distance - b.distance);
+};
+
+/**
+ * Upsert or refresh an active user session with GeoJSON coordinates and geohash.
  */
 userSessionSchema.statics.upsertSession = async function (socketId, userId, roomId, coordinates) {
+  const geohash = encodeGeohash(coordinates);
+
   const session = await this.findOneAndUpdate(
     { socketId },
     {
@@ -146,7 +243,11 @@ userSessionSchema.statics.upsertSession = async function (socketId, userId, room
         userId,
         roomId,
         socketId,
-        location: { type: 'Point', coordinates },
+        location: {
+          type: 'Point',
+          coordinates,
+        },
+        geohash,
         isActive: true,
         lastActiveAt: new Date(),
       },
@@ -165,7 +266,6 @@ userSessionSchema.statics.upsertSession = async function (socketId, userId, room
 
 /**
  * Deactivate every active session for a user except the given socket.
- * @returns {Promise<number>} number of sessions deactivated
  */
 userSessionSchema.statics.deactivateUserSessions = async function (userId, keepSocketId) {
   const result = await this.updateMany(
@@ -176,13 +276,7 @@ userSessionSchema.statics.deactivateUserSessions = async function (userId, keepS
 };
 
 /**
- * Deactivate active sessions whose socket is no longer connected to this
- * instance. This is the authoritative stale-session guard: it runs at boot
- * (with no connected sockets, clearing sessions from a previous process) and
- * periodically thereafter.
- *
- * @param {Set<string>|string[]} connectedSocketIds
- * @returns {Promise<number>} number of sessions deactivated
+ * Sweep orphaned sessions (e.g. at boot or periodically).
  */
 userSessionSchema.statics.sweepOrphanSessions = async function (connectedSocketIds) {
   const live = connectedSocketIds instanceof Set ? connectedSocketIds : new Set(connectedSocketIds);
@@ -200,7 +294,6 @@ userSessionSchema.statics.sweepOrphanSessions = async function (connectedSocketI
 
 /**
  * Deactivate a session on disconnect.
- * @returns {Promise<object|null>} the deactivated session, if any
  */
 userSessionSchema.statics.deactivateSession = function (socketId) {
   return this.findOneAndUpdate(

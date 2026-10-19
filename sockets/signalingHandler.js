@@ -1,10 +1,11 @@
 import UserSession from '../models/UserSession.js';
 import { config } from '../config/env.js';
 import { parseCoordinates } from '../utils/coordinates.js';
+import { encodeGeohash } from '../utils/geohash.js';
 import { validateId, validateSessionDescription, validateIceCandidate } from '../utils/validate.js';
 import { createRateLimiter } from '../utils/rateLimiter.js';
 
-const PROXIMITY_RADIUS = config.proximityRadius; // virtual-office pixels
+const PROXIMITY_RADIUS = config.proximityRadius; // meters
 
 function emitError(socket, event, message) {
   socket.emit('error', { event, message });
@@ -109,7 +110,8 @@ export const registerSignalingHandler = (io, socket) => {
       }
 
       await socket.join(roomId);
-      await UserSession.upsertSession(socket.id, userId, roomId, coordinates);
+      const session = await UserSession.upsertSession(socket.id, userId, roomId, coordinates);
+      const geohash = session.geohash;
 
       const startTime = performance.now();
       const nearbyPeers = await UserSession.findNearbyPeers(roomId, coordinates, PROXIMITY_RADIUS, socket.id);
@@ -122,6 +124,7 @@ export const registerSignalingHandler = (io, socket) => {
         userId,
         roomId,
         coordinates,
+        geohash,
         proximityRadius: PROXIMITY_RADIUS,
         nearbyPeers,
         queryDurationMs,
@@ -129,7 +132,7 @@ export const registerSignalingHandler = (io, socket) => {
       socket.emit('room-joined', responsePayload);
       respond(responsePayload);
 
-      socket.to(roomId).emit('peer-joined', { userId, socketId: socket.id, coordinates });
+      socket.to(roomId).emit('peer-joined', { userId, socketId: socket.id, coordinates, geohash });
 
       nearbyPeers.forEach((peer) => {
         const peerSocket = io.sockets.sockets.get(peer.socketId);
@@ -140,6 +143,9 @@ export const registerSignalingHandler = (io, socket) => {
           userId,
           socketId: socket.id,
           coordinates,
+          geohash,
+          distance: peer.distance,
+          spatialGain: peer.spatialGain,
         });
       });
     } catch (err) {
@@ -169,12 +175,13 @@ export const registerSignalingHandler = (io, socket) => {
         return emitError(socket, 'update-position', parsed.error);
       }
       const coordinates = parsed.coordinates;
+      const geohash = encodeGeohash(coordinates);
 
       const startTime = performance.now();
       const [, nearbyPeers] = await Promise.all([
         UserSession.updateOne(
           { socketId: socket.id, isActive: true },
-          { $set: { location: { type: 'Point', coordinates }, lastActiveAt: new Date() } }
+          { $set: { location: { type: 'Point', coordinates }, geohash, lastActiveAt: new Date() } }
         ),
         UserSession.findNearbyPeers(socket.roomId, coordinates, PROXIMITY_RADIUS, socket.id),
       ]);
@@ -195,6 +202,9 @@ export const registerSignalingHandler = (io, socket) => {
           userId: socket.userId,
           socketId: socket.id,
           coordinates,
+          geohash,
+          distance: peer.distance,
+          spatialGain: peer.spatialGain,
         });
       }
       for (const peerSocketId of previous) {
@@ -211,11 +221,12 @@ export const registerSignalingHandler = (io, socket) => {
       }
       socket.data.nearbySocketIds = next;
 
-      socket.emit('proximity-update', { coordinates, nearbyPeers, queryDurationMs });
+      socket.emit('proximity-update', { coordinates, geohash, nearbyPeers, queryDurationMs });
       socket.to(socket.roomId).emit('peer-position-updated', {
         userId: socket.userId,
         socketId: socket.id,
         coordinates,
+        geohash,
       });
     } catch (err) {
       console.error(`[Socket.io] update-position error for ${socket.id}:`, err.message);
