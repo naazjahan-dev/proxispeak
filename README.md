@@ -97,6 +97,8 @@ Visit **`http://localhost:5000/map`** in any web browser once the server is runn
 
 ## 🧪 Verification & Test Commands
 
+The integration tests connect to MongoDB at `MONGO_URI` (default `mongodb://127.0.0.1:27017`) and create temporary `proxispeak_test*` databases. Start MongoDB before running them; Redis is disabled for tests.
+
 Run the full automated test suite:
 ```bash
 # Run all 25 unit and integration tests
@@ -111,6 +113,53 @@ npm run test:smoke
 # Run full end-to-end multi-client simulation
 npm run test:e2e
 ```
+
+---
+
+## 🧰 Prerequisites & Installation
+
+- **Node.js 20+** — the scripts use the built-in `node --test` runner and `node --watch`.
+- **MongoDB** reachable through `MONGO_URI` (required for sessions and proximity queries).
+- **Redis** (optional) — only needed for multi-instance Socket.IO fan-out.
+
+```bash
+npm install
+cp .env.example .env   # then edit .env for your environment
+```
+
+`config/env.js` loads `.env` once at startup and validates the configuration before the server binds a port. Invalid values stop the process with a descriptive error. Key variables (see `.env.example` for the full annotated list):
+
+| Variable | Default | Notes |
+| :--- | :--- | :--- |
+| `NODE_ENV` | `development` | `development`, `production`, or `test`. |
+| `PORT` | `5000` | `0` selects an ephemeral port. In non-production, a busy port falls back to the next one (up to `PORT + 10`). |
+| `MONGO_URI` | `mongodb://127.0.0.1:27017/proxispeak` | Must be explicit in production. |
+| `REDIS_ENABLED` | `true` | Set `false` to force the in-memory adapter. |
+| `REDIS_URL` | `redis://127.0.0.1:6379` | Validated when Redis is enabled. |
+| `CORS_ORIGIN` | `*` | Comma-separated origins; credentials are disabled for `*`, which is rejected in production. |
+| `PROXIMITY_RADIUS` | `100` | Proximity radius in meters. |
+| `SESSION_SWEEP_INTERVAL_MS` | `60000` | How often orphaned sessions are deactivated. |
+| `SESSION_TTL_SECONDS` | `86400` | TTL backstop for session documents. |
+| `RATE_LIMIT_POSITION_PER_SEC` | `30` | Per-socket `update-position` token bucket. |
+| `RATE_LIMIT_SIGNAL_PER_SEC` | `60` | Per-socket WebRTC signaling token bucket. |
+
+Redis is optional: if it is disabled or unreachable, the server logs a warning and uses the single-instance in-memory Socket.IO adapter. Multi-instance fan-out requires Redis.
+
+---
+
+## 🌐 HTTP API Endpoints
+
+In addition to the Socket.IO events below, the server exposes:
+
+| Method & Path | Description |
+| :--- | :--- |
+| `GET /` | Service metadata, including the active pub/sub adapter. |
+| `GET /health` | Returns `200` when MongoDB is connected, otherwise `503`; reports MongoDB and Redis state. |
+| `GET /map` | Leaflet/OpenStreetMap visualizer. |
+| `GET /api/geohash/encode?lat=&lon=&precision=` | Encodes a coordinate (precision defaults to `7`) and returns the geohash plus its 8 neighbors. |
+| `GET /api/geohash/:hash/neighbors` | Decodes a geohash and returns its center coordinate and 8 neighbors. |
+| `GET /api/rooms/:roomId/geohash/:hash` | Lists active sessions in a room whose geohash is the given cell or one of its 8 neighbors. |
+| `GET /api/rooms/:roomId/users` | Lists active sessions in a room. |
 
 ---
 
