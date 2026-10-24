@@ -97,22 +97,17 @@ Visit **`http://localhost:5000/map`** in any web browser once the server is runn
 
 ## 🧪 Verification & Test Commands
 
-The integration tests connect to MongoDB at `MONGO_URI` (default `mongodb://127.0.0.1:27017`) and create temporary `proxispeak_test*` databases. Start MongoDB before running them; Redis is disabled for tests.
+Install dependencies and start MongoDB before running any command that boots the server. These are the scripts defined in `package.json`; no separate test framework is required.
 
-Run the full automated test suite:
-```bash
-# Run all 25 unit and integration tests
-npm test
+| Command | What it does | Needs MongoDB |
+| :--- | :--- | :--- |
+| `npm test` | Runs Node's built-in test runner over the unit tests (coordinates, Haversine/geohash, rate limiting, config parsing) and integration tests (health, proximity, session cleanup). Default discovery also executes `scripts/self-test.js`. | Yes |
+| `npm run test:watch` | Same as `npm test` in watch mode. | Yes |
+| `npm run test:schema` | Static check of the `UserSession` indexes (strict `2dsphere`, room + `2dsphere`, room + geohash), Redis client wiring, and signaling handler export. Does not connect to MongoDB. | No |
+| `npm run test:smoke` | Boots the server and verifies `$near` proximity, WebRTC offer/answer/ICE relay, position updates, and cleanup. | Yes |
+| `npm run test:e2e` | Boots the server and runs a two-client simulation, including moving a peer out of range and disconnect handling. | Yes |
 
-# Verify MongoDB 2dsphere and Geohash indexes
-npm run test:schema
-
-# Run standalone smoke test (MongoDB $near, WebRTC relay, cleanup)
-npm run test:smoke
-
-# Run full end-to-end multi-client simulation
-npm run test:e2e
-```
+The integration tests create and drop temporary `proxispeak_test*` databases. The self-test and end-to-end scripts boot the app with the normal environment, so they use the configured `MONGO_URI` (default `proxispeak`) and `PORT`; set `MONGO_URI` to a disposable database if you do not want smoke-test sessions in your development data. Redis is optional for these commands and the server falls back to the in-memory adapter when it is unavailable.
 
 ---
 
