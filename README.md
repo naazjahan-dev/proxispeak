@@ -1,31 +1,70 @@
-# React + Vite
+# 🌍 ProxiSpeak — Geospatial Proximity Audio Ecosystem
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+*Discover places. Explore history. Listen to stories.*
 
-Currently, two official plugins are available:
+ProxiSpeak is a location-aware audio guide platform that helps users discover nearby attractions and explore their historical and cultural significance through audio narration in Hindi and English.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The platform combines geolocation, place discovery, and audio technology to create an interactive way to explore India's heritage and tourist destinations.
 
-## React Compiler
+## ✨ Key Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- 📍 *GPS Location Detection* — Detect the user's current location with permission.
+- 🏛️ *Nearby Places Discovery* — Explore monuments, museums, temples, and tourist attractions.
+- 🔎 *Manual Place Search* — Search for supported places by name.
+- 🎧 *Audio Narration* — Listen to place information through text-to-speech.
+- 🌐 *Bilingual Support* — Narration in Hindi and English, depending on available browser voices.
+- 📚 *Historical & Cultural Information* — Discover history, heritage, and interesting facts about supported locations.
+- 📏 *Distance Calculation* — Check the distance between the user's location and selected places.
+- 🚶 *Location-Based Suggestions* — Discover places through proximity-based suggestions when supported.
+- 🔐 *Login & Registration* — User authentication interface.
+- 📱 *Responsive UI* — An interface designed for different screen sizes.
 
-## Expanding the Oxlint configuration
+## 🛠️ Tech Stack
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- *HTML5* — Website structure
+- *CSS3* — Styling and responsive design
+- *JavaScript* — Interactive functionality
+- *React.js* — Component-based interface, if configured in the project
+- *Geolocation API* — Location detection
+- *Web Speech API* — Audio narration using text-to-speech
 
+## ⚙️ How It Works
 
-## Indian Place Guide demo update
-- Existing login/register/dashboard layout and routing are retained.
-- Place catalogue includes Indian heritage locations with coordinates, Hindi/English descriptions, and historical context.
-- Use Nearby Indian Places → Use My GPS to request browser location permission. The default demo location is Rajwada, Indore.
-- Use Indian Place Guide search to find any supported place across the demo dataset.
-- “Listen to place guide” uses browser/device Speech Synthesis in Hindi or English; it does not depend on the old ambient WAV files.
-- GPS works on localhost or HTTPS and requires user permission. Browser speech voice availability varies by device. Place facts are demo copy and should be checked against official sources before production.
+1. The user grants permission to access their current location.
+2. ProxiSpeak identifies the user's coordinates.
+3. Users discover nearby supported places or search manually.
+4. The application displays available place information and distance.
+5. Users select Hindi or English narration.
+6. Location-based suggestions can help users discover attractions as they move around.
 
-## Run locally
-1. Install Node.js (current LTS).
-2. Open the `ProxiSpeak2` folder in a terminal.
-3. Run `npm install` then `npm run dev`.
-4. Open the localhost URL printed by Vite.
+## 🎯 Project Objectives
+
+- Make travel exploration more informative and interactive.
+- Improve access to historical and cultural information.
+- Provide multilingual audio guidance.
+- Explore the use of geolocation and proximity-based experiences in tourism.
+
+## 🔮 Future Enhancements
+
+- Integration with reliable tourism and places APIs.
+- Interactive maps and navigation.
+- Automatic audio playback near supported attractions.
+- Offline access to saved place information.
+- Personalized recommendations and saved destinations.
+- Enhanced backend and authentication integration.
+
+## 🔒 Privacy
+
+Location-based features require user permission. Location information should be handled responsibly and used only for the functionality that requires it.
+
+## 🤝 Contributing
+
+Suggestions, feature improvements, and bug reports are welcome. Contributions can help make ProxiSpeak more useful and accessible.
+
+## 📄 License
+
+An appropriate open-source license can be added when the project is ready for public distribution.
+
+---
+
+*ProxiSpeak — Explore the world around you, one story at a time.*
