@@ -156,6 +156,12 @@ describe('geolocation tracker', () => {
     assert.equal(e.type, GeoErrorType.UNKNOWN)
     assert.equal(e.fatal, true)
   })
+  it('handles a missing error object safely', () => {
+  const e = mapGeolocationError(null)
+
+  assert.equal(e.type, GeoErrorType.UNKNOWN)
+  assert.equal(e.fatal, true)
+})
 
   it('requests high accuracy without cached positions by default', () => {
     const geo = fakeGeolocation()
