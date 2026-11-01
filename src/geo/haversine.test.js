@@ -1,3 +1,4 @@
+// Additional tests for Haversine distance calculations.
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { haversineDistance, isValidCoordinate } from './haversine.js'
