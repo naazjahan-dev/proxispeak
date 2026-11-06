@@ -1,3 +1,17 @@
+## How Proximity Detection Works
+
+1. The browser requests permission to access the user's location.
+2. The application receives GPS coordinates.
+3. The Haversine formula calculates the distance between the user and a target location.
+4. The proximity engine checks whether the user is inside the configured radius.
+5. Entry and exit events are detected when the user crosses the radius boundary.
+
+## Testing
+
+- Test valid and invalid GPS coordinates.
+- Test location accuracy validation.
+- Simulate entering and exiting a target radius.
+- Verify distance calculations using known coordinates.
 # ProxiSpeak – Geospatial Proximity Audio Ecosystem
 
 ProxiSpeak is a location-aware audio project designed to support
