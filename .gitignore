@@ -38,6 +38,10 @@ dist-ssr
 *.sln
 *.sw?
 
+# Environment variables
+.env
+.env.*
+!.env.example
 # Build artifacts & caches
 dist/
 build/
