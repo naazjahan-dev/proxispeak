@@ -1,0 +1,273 @@
+/* ProxiSpeak UI. Reuses the colour variables defined in index.css. */
+
+.app {
+  flex: 1;
+  padding: 8px 16px 32px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.app header {
+  text-align: center;
+}
+
+.app h1 {
+  margin: 16px 0 8px;
+  line-height: 1.15;
+}
+
+.tagline {
+  font-size: 15px;
+}
+
+.source-banner {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.source-banner.real {
+  background: var(--accent-bg);
+  color: var(--text-h);
+  border: 1px solid var(--accent-border);
+}
+.source-banner.sim {
+  background: #fff4d6;
+  color: #6b4a00;
+  border: 1px solid #e0a800;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.simulate {
+  border-style: dashed;
+}
+
+button {
+  font: inherit;
+  font-size: 15px;
+  color: var(--text-h);
+  background: var(--accent-bg);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  border-color: var(--accent-border);
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+button.secondary {
+  background: transparent;
+  border-color: var(--border);
+}
+button.small {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+input,
+select {
+  font: inherit;
+  font-size: 15px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+input[aria-invalid='true'] {
+  border-color: #d33;
+}
+input[type='number'] {
+  width: 6.5em;
+}
+
+.inline-field {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 12px 4px 0;
+  font-size: 14px;
+}
+.check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 15px;
+}
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 12px 0;
+}
+legend {
+  font-size: 13px;
+  padding: 0 6px;
+}
+.manual {
+  margin-top: 8px;
+}
+
+.message {
+  margin: 8px 0;
+  font-size: 15px;
+}
+.message.ok {
+  color: #1a7f37;
+}
+.message.error {
+  color: #c62828;
+}
+.message.warn {
+  color: #8a5a00;
+  background: #fff4d6;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.hint {
+  font-size: 13px;
+  margin: 6px 0;
+}
+
+.values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 12px 0 0;
+}
+.values dt {
+  font-size: 13px;
+}
+.values dd {
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-size: 16px;
+  color: var(--text-h);
+  overflow-wrap: anywhere;
+}
+
+.target-list,
+.event-log {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.target {
+  border: 1px solid var(--border);
+  border-left-width: 6px;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.target.inside {
+  border-left-color: #1a7f37;
+}
+.target.outside {
+  border-left-color: #888;
+}
+.target.unknown {
+  border-left-color: var(--border);
+}
+.target-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+.target-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 14px;
+  margin: 6px 0;
+}
+.target-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.badge.inside,
+.badge.enter {
+  background: #d9f2df;
+  color: #145c2b;
+  border-color: #9fd5ac;
+}
+.badge.exit {
+  background: #fde2e2;
+  color: #8e1d1d;
+  border-color: #f0a8a8;
+}
+.sim-tag {
+  color: #8a5a00;
+  font-weight: 700;
+}
+.event-log li {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-color-scheme: dark) {
+  .source-banner.sim,
+  .message.warn {
+    background: #3a2f10;
+    color: #ffd666;
+  }
+  .badge.inside,
+  .badge.enter {
+    background: #12351d;
+    color: #8be0a4;
+  }
+  .badge.exit {
+    background: #3d1717;
+    color: #f4a3a3;
+  }
+  .message.ok {
+    color: #6fdc8c;
+  }
+  .message.error {
+    color: #ff8a8a;
+  }
+  .sim-tag {
+    color: #ffd666;
+  }
+}

@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProxiSpeak 🌐🎧 Real-Time Geospatial Audio on OpenStreetMap</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --card-bg: rgba(30, 41, 59, 0.95);
+      --primary: #38bdf8;
+      --primary-glow: rgba(56, 189, 248, 0.35);
+      --accent: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #334155;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Header */
+    header {
+      background: #1e293b;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 1000;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: #fff;
+    }
+
+    .brand span {
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: #0f172a;
+      border: 1px solid var(--border);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--danger);
+      transition: background 0.3s;
+    }
+
+    .status-dot.online {
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    /* Main Container */
+    .app-container {
+      display: flex;
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Leaflet Map */
+    #map {
+      flex: 1;
+      height: 100%;
+      background: #0f172a;
+      z-index: 1;
+    }
+
+    /* Sidebar Panel */
+    .sidebar {
+      width: 400px;
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border-left: 1px solid var(--border);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+      z-index: 1000;
+      box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .panel-card {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+    }
+
+    .panel-card h3 {
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .form-group {
+      margin-bottom: 8px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-bottom: 3px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 7px 10px;
+      background: #1e293b;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 0.82rem;
+      outline: none;
+      transition: border 0.2s;
+    }
+
+    .form-input:focus {
+      border-color: var(--primary);
+    }
+
+    .row-inputs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--primary);
+      color: #0f172a;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter 0.2s, transform 0.1s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn:hover {
+      filter: brightness(1.1);
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn-secondary {
+      background: #334155;
+      color: #fff;
+      margin-top: 6px;
+    }
+
+    .btn-gps {
+      background: #10b981;
+      color: #064e3b;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .btn-gps:hover {
+      background: #34d399;
+    }
+
+    /* Metrics Grid */
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .metric-box {
+      background: #1e293b;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    .metric-box span {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      display: block;
+    }
+
+    .metric-box strong {
+      font-size: 0.9rem;
+      color: var(--primary);
+      display: block;
+      margin-top: 2px;
+      font-family: monospace;
+    }
+
+    /* Nearby Peers List */
+    .peers-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+
+    .peer-item {
+      background: #1e293b;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .peer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .peer-distance {
+      color: var(--accent);
+      font-size: 0.72rem;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.15);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    /* Spatial Volume Bar */
+    .volume-meter {
+      height: 5px;
+      width: 100%;
+      background: #334155;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+
+    .volume-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--primary));
+      width: 0%;
+      transition: width 0.2s ease-out;
+    }
+
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .slider-container input {
+      flex: 1;
+    }
+
+    /* Avatar Marker Style */
+    .avatar-icon {
+      background: var(--primary);
+      color: #0f172a;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      box-shadow: 0 0 16px var(--primary-glow);
+      border: 2px solid #fff;
+    }
+
+    .peer-icon {
+      background: var(--accent);
+      color: #fff;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+      border: 2px solid #fff;
+    }
+
+    .location-banner {
+      background: #1e293b;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .location-banner strong {
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header>
+    <div class="brand">
+      <h1>ProxiSpeak <span>Geospatial Audio</span></h1>
+      <span class="badge">OpenStreetMap &bull; Leaflet &bull; Geohash &bull; 2dsphere</span>
+    </div>
+    <div class="badge">
+      <div id="statusDot" class="status-dot"></div>
+      <span id="statusText">Connecting...</span>
+    </div>
+  </header>
+
+  <!-- Application Body -->
+  <div class="app-container">
+    
+    <!-- OpenStreetMap Leaflet Container -->
+    <div id="map"></div>
+
+    <!-- Right Control & Telemetry Sidebar -->
+    <aside class="sidebar">
+
+      <!-- Location Navigator Card -->
+      <div class="panel-card">
+        <h3>📍 Location & Coordinates</h3>
+        
+        <!-- Live GPS Button -->
+        <button id="locateMeBtn" class="btn btn-gps">
+          🎯 Detect My Real GPS Location
+        </button>
+
+        <div id="locationNotice" class="location-banner">
+          <span>Detecting or click map to move avatar...</span>
+        </div>
+
+        <!-- Search City / Address -->
+        <div class="form-group">
+          <label>Search City / Landmark</label>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="citySearchInput" class="form-input" placeholder="e.g. New Delhi, Mumbai, New York...">
+            <button id="citySearchBtn" class="btn" style="width: auto; padding: 0 12px;">Search</button>
+          </div>
+        </div>
+
+        <!-- Precise Manual Lat/Lon Coordinates -->
+        <div class="row-inputs">
+          <div class="form-group">
+            <label>Latitude (-90 to 90)</label>
+            <input type="number" id="manualLatInput" class="form-input" step="any" placeholder="Latitude">
+          </div>
+          <div class="form-group">
+            <label>Longitude (-180 to 180)</label>
+            <input type="number" id="manualLonInput" class="form-input" step="any" placeholder="Longitude">
+          </div>
+        </div>
+        <button id="applyCoordsBtn" class="btn btn-secondary">Set Custom Coordinates</button>
+      </div>
+
+      <!-- Identity & Room Config -->
+      <div class="panel-card">
+        <h3>Session Settings</h3>
+        <div class="row-inputs">
+          <div class="form-group">
+            <label>User ID</label>
+            <input type="text" id="userIdInput" class="form-input" value="avatar-alice">
+          </div>
+          <div class="form-group">
+            <label>Room ID</label>
+            <input type="text" id="roomIdInput" class="form-input" value="global-quad">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Proximity Audio Radius: <strong id="radiusLabel">100</strong>m</label>
+          <div class="slider-container">
+            <input type="range" id="radiusInput" min="20" max="500" value="100" step="10">
+          </div>
+        </div>
+        <button id="joinBtn" class="btn">Join Proximity Room</button>
+        <button id="spawnMockPeerBtn" class="btn btn-secondary">Spawn Demo Nearby Peer</button>
+      </div>
+
+      <!-- Real-Time Geospatial Metrics -->
+      <div class="panel-card">
+        <h3>Geospatial Telemetry</h3>
+        <div class="metric-grid">
+          <div class="metric-box">
+            <span>Geohash (Precision 7)</span>
+            <strong id="geohashValue">------</strong>
+          </div>
+          <div class="metric-box">
+            <span>2dsphere Query</span>
+            <strong id="queryLatencyValue">0.00 ms</strong>
+          </div>
+          <div class="metric-box">
+            <span>Latitude</span>
+            <strong id="latValue">--</strong>
+          </div>
+          <div class="metric-box">
+            <span>Longitude</span>
+            <strong id="lonValue">--</strong>
+          </div>
+        </div>
+        <p style="font-size: 0.7rem; color: var(--text-muted); margin-top: 6px;">
+          💡 <em>Click anywhere on the map or drag your avatar marker to move.</em>
+        </p>
+      </div>
+
+      <!-- Nearby Peers within Haversine Proximity -->
+      <div class="panel-card" style="flex: 1;">
+        <h3>
+          <span>Nearby Peers</span>
+          <span id="peersCount" class="badge">0 in Range</span>
+        </h3>
+        <ul id="peersList" class="peers-list">
+          <li style="color: var(--text-muted); font-size: 0.78rem; text-align: center; padding: 15px;">
+            No peers currently in audio proximity. Move around or spawn demo peer.
+          </li>
+        </ul>
+      </div>
+
+    </aside>
+  </div>
+
+  <!-- Leaflet & Socket.io Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+    // -------------------------------------------------------------
+    // 1. Initial State & Setup
+    // -------------------------------------------------------------
+    // Default initial location: New Delhi (77.2090, 28.6139) or auto-detect
+    let currentCoords = [77.2090, 28.6139]; // [longitude, latitude]
+    let proximityRadius = 100; // in meters
+    let socket = null;
+    let myMarker = null;
+    let proximityCircle = null;
+    let peerMarkers = new Map(); // socketId -> L.marker
+    let mockPeerActive = false;
+    let mockPeerInterval = null;
+
+    // Elements
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const locationNotice = document.getElementById('locationNotice');
+    const locateMeBtn = document.getElementById('locateMeBtn');
+    const citySearchInput = document.getElementById('citySearchInput');
+    const citySearchBtn = document.getElementById('citySearchBtn');
+    const manualLatInput = document.getElementById('manualLatInput');
+    const manualLonInput = document.getElementById('manualLonInput');
+    const applyCoordsBtn = document.getElementById('applyCoordsBtn');
+    const geohashValue = document.getElementById('geohashValue');
+    const queryLatencyValue = document.getElementById('queryLatencyValue');
+    const lonValue = document.getElementById('lonValue');
+    const latValue = document.getElementById('latValue');
+    const radiusLabel = document.getElementById('radiusLabel');
+    const radiusInput = document.getElementById('radiusInput');
+    const peersCount = document.getElementById('peersCount');
+    const peersList = document.getElementById('peersList');
+    const joinBtn = document.getElementById('joinBtn');
+    const spawnMockPeerBtn = document.getElementById('spawnMockPeerBtn');
+
+    // -------------------------------------------------------------
+    // 2. Initialize Leaflet with OpenStreetMap
+    // -------------------------------------------------------------
+    const map = L.map('map', {
+      zoomControl: false,
+    }).setView([currentCoords[1], currentCoords[0]], 16);
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    // OpenStreetMap Tile Layer
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
+
+    // Create Custom Avatar Icons
+    const createAvatarIcon = (label, isPeer = false) => {
+      return L.divIcon({
+        className: 'custom-leaflet-avatar',
+        html: `<div class="${isPeer ? 'peer-icon' : 'avatar-icon'}">${label.slice(0, 2).toUpperCase()}</div>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
+      });
+    };
+
+    // Add User Marker (Note: Leaflet expects [latitude, longitude])
+    myMarker = L.marker([currentCoords[1], currentCoords[0]], {
+      draggable: true,
+      icon: createAvatarIcon('ME'),
+    }).addTo(map);
+
+    myMarker.bindPopup('<strong>Your Avatar</strong><br>Drag me or click map to move.');
+
+    // Proximity Radius Circle (meters)
+    proximityCircle = L.circle([currentCoords[1], currentCoords[0]], {
+      radius: proximityRadius,
+      color: '#38bdf8',
+      fillColor: '#38bdf8',
+      fillOpacity: 0.15,
+      weight: 2,
+    }).addTo(map);
+
+    // -------------------------------------------------------------
+    // 3. Coordinate Update & Map Event Listeners
+    // -------------------------------------------------------------
+    function updateAvatarPosition(lon, lat, panMap = false) {
+      currentCoords = [lon, lat];
+      lonValue.textContent = lon.toFixed(6);
+      latValue.textContent = lat.toFixed(6);
+      manualLatInput.value = lat.toFixed(6);
+      manualLonInput.value = lon.toFixed(6);
+
+      // Leaflet takes [latitude, longitude]
+      myMarker.setLatLng([lat, lon]);
+      proximityCircle.setLatLng([lat, lon]);
+
+      if (panMap) {
+        map.setView([lat, lon], map.getZoom() < 15 ? 16 : map.getZoom());
+      }
+
+      if (socket && socket.connected) {
+        socket.emit('update-position', {
+          roomId: document.getElementById('roomIdInput').value.trim(),
+          coordinates: [lon, lat],
+        });
+      }
+    }
+
+    // Click map to teleport/walk
+    map.on('click', (e) => {
+      locationNotice.innerHTML = `📍 Moved to <strong>${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}</strong>`;
+      updateAvatarPosition(e.latlng.lng, e.latlng.lat);
+    });
+
+    // Drag avatar marker
+    myMarker.on('drag', (e) => {
+      const latlng = e.target.getLatLng();
+      currentCoords = [latlng.lng, latlng.lat];
+      lonValue.textContent = latlng.lng.toFixed(6);
+      latValue.textContent = latlng.lat.toFixed(6);
+      manualLatInput.value = latlng.lat.toFixed(6);
+      manualLonInput.value = latlng.lng.toFixed(6);
+      proximityCircle.setLatLng(latlng);
+    });
+
+    myMarker.on('dragend', (e) => {
+      const latlng = e.target.getLatLng();
+      locationNotice.innerHTML = `📍 Dragged to <strong>${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}</strong>`;
+      updateAvatarPosition(latlng.lng, latlng.lat);
+    });
+
+    // Proximity radius slider
+    radiusInput.addEventListener('input', (e) => {
+      proximityRadius = Number(e.target.value);
+      radiusLabel.textContent = proximityRadius;
+      proximityCircle.setRadius(proximityRadius);
+    });
+
+    // -------------------------------------------------------------
+    // 4. GPS Geolocation & Location Search
+    // -------------------------------------------------------------
+    function detectRealLocation() {
+      if (!('geolocation' in navigator)) {
+        locationNotice.innerHTML = '⚠️ Geolocation not supported by your browser.';
+        return;
+      }
+
+      locationNotice.innerHTML = '🔄 Requesting your GPS coordinates...';
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          locationNotice.innerHTML = `🎯 <strong>Detected GPS:</strong> ${lat.toFixed(5)}, ${lon.toFixed(5)} (accuracy: ±${Math.round(pos.coords.accuracy)}m)`;
+          updateAvatarPosition(lon, lat, true);
+        },
+        (err) => {
+          console.warn('Geolocation error:', err.message);
+          locationNotice.innerHTML = `⚠️ GPS access denied/unavailable: ${err.message}. You can search your city below.`;
+        },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+      );
+    }
+
+    locateMeBtn.addEventListener('click', detectRealLocation);
+
+    // Search City via Nominatim OpenStreetMap Geocoding
+    async function searchCity(query) {
+      if (!query || !query.trim()) return;
+      locationNotice.innerHTML = `🔍 Searching for "<strong>${query.trim()}</strong>"...`;
+
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query.trim())}`);
+        const data = await res.json();
+        if (data && data.length > 0) {
+          const first = data[0];
+          const lat = parseFloat(first.lat);
+          const lon = parseFloat(first.lon);
+          locationNotice.innerHTML = `📍 Found: <strong>${first.display_name.slice(0, 45)}...</strong>`;
+          updateAvatarPosition(lon, lat, true);
+        } else {
+          locationNotice.innerHTML = `⚠️ No location found for "${query}". Try another city name.`;
+        }
+      } catch (err) {
+        locationNotice.innerHTML = `⚠️ Search failed: ${err.message}`;
+      }
+    }
+
+    citySearchBtn.addEventListener('click', () => searchCity(citySearchInput.value));
+    citySearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') searchCity(citySearchInput.value);
+    });
+
+    // Manual Coordinates Apply
+    applyCoordsBtn.addEventListener('click', () => {
+      const lat = parseFloat(manualLatInput.value);
+      const lon = parseFloat(manualLonInput.value);
+      if (isNaN(lat) || isNaN(lon)) {
+        alert('Please enter valid numeric Latitude and Longitude');
+        return;
+      }
+      if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        alert('Latitude must be in [-90, 90] and Longitude in [-180, 180]');
+        return;
+      }
+      locationNotice.innerHTML = `📍 Manually set to <strong>${lat.toFixed(5)}, ${lon.toFixed(5)}</strong>`;
+      updateAvatarPosition(lon, lat, true);
+    });
+
+    // -------------------------------------------------------------
+    // 5. Socket.io Real-Time Connection & Signaling
+    // -------------------------------------------------------------
+    function connectSocket() {
+      socket = io({
+        transports: ['websocket', 'polling'],
+      });
+
+      socket.on('connect', () => {
+        statusDot.classList.add('online');
+        statusText.textContent = `Connected (${socket.id.slice(0, 5)})`;
+        joinRoom();
+      });
+
+      socket.on('disconnect', () => {
+        statusDot.classList.remove('online');
+        statusText.textContent = 'Disconnected';
+      });
+
+      socket.on('room-joined', (data) => {
+        if (data.geohash) geohashValue.textContent = data.geohash;
+        if (data.queryDurationMs !== undefined) queryLatencyValue.textContent = `${data.queryDurationMs} ms`;
+        renderPeers(data.nearbyPeers || []);
+      });
+
+      socket.on('proximity-update', (data) => {
+        if (data.geohash) geohashValue.textContent = data.geohash;
+        if (data.queryDurationMs !== undefined) queryLatencyValue.textContent = `${data.queryDurationMs} ms`;
+        renderPeers(data.nearbyPeers || []);
+      });
+
+      socket.on('peer-entered-proximity', (peer) => {
+        console.log('[Proximity] Peer entered audio range:', peer);
+        socket.emit('update-position', {
+          roomId: document.getElementById('roomIdInput').value.trim(),
+          coordinates: currentCoords,
+        });
+      });
+
+      socket.on('peer-left-proximity', (peer) => {
+        console.log('[Proximity] Peer left audio range:', peer);
+        removePeerMarker(peer.socketId);
+      });
+
+      socket.on('peer-disconnected', (peer) => {
+        removePeerMarker(peer.socketId);
+      });
+    }
+
+    function joinRoom() {
+      const userId = document.getElementById('userIdInput').value.trim();
+      const roomId = document.getElementById('roomIdInput').value.trim();
+      if (!userId || !roomId) return;
+
+      socket.emit('join-room', {
+        userId,
+        roomId,
+        coordinates: currentCoords,
+      });
+    }
+
+    joinBtn.addEventListener('click', () => {
+      if (!socket) connectSocket();
+      else joinRoom();
+    });
+
+    // -------------------------------------------------------------
+    // 6. Render Nearby Peers & Spatial Audio Gauges
+    // -------------------------------------------------------------
+    function renderPeers(peers) {
+      peersCount.textContent = `${peers.length} in Range`;
+
+      if (peers.length === 0) {
+        peersList.innerHTML = `
+          <li style="color: var(--text-muted); font-size: 0.78rem; text-align: center; padding: 15px;">
+            No peers currently in audio proximity (<${proximityRadius}m). Move around or click map.
+          </li>`;
+        peerMarkers.forEach((marker) => map.removeLayer(marker));
+        peerMarkers.clear();
+        return;
+      }
+
+      const activeIds = new Set(peers.map((p) => p.socketId));
+      peerMarkers.forEach((marker, id) => {
+        if (!activeIds.has(id)) {
+          map.removeLayer(marker);
+          peerMarkers.delete(id);
+        }
+      });
+
+      peersList.innerHTML = '';
+
+      peers.forEach((peer) => {
+        const [lon, lat] = peer.location.coordinates;
+        const dist = peer.distance || 0;
+        const gainPercent = Math.round((peer.spatialGain || 0) * 100);
+
+        let marker = peerMarkers.get(peer.socketId);
+        if (!marker) {
+          marker = L.marker([lat, lon], {
+            icon: createAvatarIcon(peer.userId, true),
+          }).addTo(map);
+          peerMarkers.set(peer.socketId, marker);
+        } else {
+          marker.setLatLng([lat, lon]);
+        }
+
+        marker.bindPopup(`<strong>${peer.userId}</strong><br>Distance: ${dist}m<br>Geohash: ${peer.geohash}`);
+
+        const li = document.createElement('li');
+        li.className = 'peer-item';
+        li.innerHTML = `
+          <div class="peer-header">
+            <span>👤 ${peer.userId}</span>
+            <span class="peer-distance">📍 ${dist}m</span>
+          </div>
+          <div style="font-size: 0.7rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+            <span>Geohash: <code>${peer.geohash || 'n/a'}</code></span>
+            <span>Audio Gain: <strong>${gainPercent}%</strong></span>
+          </div>
+          <div class="volume-meter">
+            <div class="volume-bar" style="width: ${gainPercent}%;"></div>
+          </div>
+        `;
+        peersList.appendChild(li);
+      });
+    }
+
+    function removePeerMarker(socketId) {
+      const marker = peerMarkers.get(socketId);
+      if (marker) {
+        map.removeLayer(marker);
+        peerMarkers.delete(socketId);
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 7. Demo Mock Peer Simulation on OpenStreetMap
+    // -------------------------------------------------------------
+    spawnMockPeerBtn.addEventListener('click', () => {
+      if (mockPeerActive) {
+        clearInterval(mockPeerInterval);
+        mockPeerActive = false;
+        spawnMockPeerBtn.textContent = 'Spawn Demo Nearby Peer';
+        removePeerMarker('mock-peer-socket-1');
+        return;
+      }
+
+      mockPeerActive = true;
+      spawnMockPeerBtn.textContent = 'Stop Demo Peer';
+
+      const mockSocket = io({ transports: ['websocket'] });
+      let angle = 0;
+
+      mockSocket.on('connect', () => {
+        const offsetLon = currentCoords[0] + 0.0003;
+        const offsetLat = currentCoords[1] + 0.0002;
+        mockSocket.emit('join-room', {
+          userId: 'bot-bob',
+          roomId: document.getElementById('roomIdInput').value.trim(),
+          coordinates: [offsetLon, offsetLat],
+        });
+
+        mockPeerInterval = setInterval(() => {
+          if (!mockPeerActive) {
+            mockSocket.disconnect();
+            return;
+          }
+          angle += 0.15;
+          const radiusMeters = 50 + Math.sin(angle) * 35; // oscillates between 15m and 85m
+          const dLat = (radiusMeters / 111320) * Math.sin(angle);
+          const dLon = (radiusMeters / (111320 * Math.cos(currentCoords[1] * Math.PI / 180))) * Math.cos(angle);
+
+          const newLon = currentCoords[0] + dLon;
+          const newLat = currentCoords[1] + dLat;
+
+          mockSocket.emit('update-position', {
+            roomId: document.getElementById('roomIdInput').value.trim(),
+            coordinates: [newLon, newLat],
+          });
+        }, 800);
+      });
+    });
+
+    // Attempt automatic GPS location on load
+    detectRealLocation();
+
+    // Start socket
+    connectSocket();
+  </script>
+</body>
+</html>
