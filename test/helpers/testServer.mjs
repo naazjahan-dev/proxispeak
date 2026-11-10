@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 export async function startTestServer({ dbName = 'proxispeak_test', port = 0, redisEnabled = 'false' } = {}) {
   process.env.NODE_ENV = 'test';
+  process.env.JWT_SECRET = 'proxispeak-test-secret-only-32-characters-long';
   process.env.PROXISPEAK_AUTOSTART = 'false';
   process.env.REDIS_ENABLED = redisEnabled;
   process.env.PORT = String(port);

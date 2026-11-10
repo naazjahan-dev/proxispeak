@@ -1,10 +1,13 @@
 import { io } from 'socket.io-client';
 import mongoose from 'mongoose';
-import { httpServer, stopServer } from '../server.js';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function runSelfTest() {
+  process.env.NODE_ENV = 'test';
+  process.env.JWT_SECRET = 'proxispeak-test-secret-only-32-characters-long';
+
+  const { httpServer, stopServer } = await import('../server.js');
   console.log('----------------------------------------------------');
   console.log('🧪 Starting ProxiSpeak Automated Self-Test');
   console.log('----------------------------------------------------');

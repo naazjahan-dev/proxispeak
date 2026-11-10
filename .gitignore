@@ -58,3 +58,7 @@ Thumbs.db
 # Local scratch
 tmp/
 temp/
+
+.env
+.env.*
+!.env.example
