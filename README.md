@@ -254,9 +254,22 @@ In addition to the Socket.IO events below, the server exposes:
 ## 🚀 Starting the Server
 
 ```bash
+
+```
+## Real-Time Location Update Workflow
+
+The geolocation module processes location updates to support proximity detection.
+
+- Obtain updated coordinates when location changes.
+- Validate latitude and longitude values.
+- Calculate the distance from nearby audio locations.
+- Compare the distance with the configured listening radius.
+- Track proximity state changes.
+- Notify the audio module when an entry or exit event occurs.
+
+Location updates should be handled carefully to avoid unnecessary calculations and duplicate proximity events.
 # Production start
 npm start
 
 # Development mode with file watch
 npm run dev
-```
